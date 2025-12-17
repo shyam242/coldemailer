@@ -1,2 +1,3 @@
 streamlit
 pandas
+sib_api_v3_sdk
