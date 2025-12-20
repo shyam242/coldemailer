@@ -4,236 +4,326 @@ import smtplib
 import ssl
 import time
 from email.message import EmailMessage
+from typing import List, Dict, Any, Optional
 
-# =========================
-# PAGE CONFIG
-# =========================
-st.set_page_config(page_title="ColdMail Automation", layout="wide")
+st.set_page_config(page_title="Startup Outreach Mailer", layout="wide")
 
-# =========================
-# UI (GLASS + DARK)
-# =========================
-st.markdown("""
-<style>
-.stApp {
-    background: radial-gradient(circle at top left, #1f2933, #0b0f14 65%);
-}
-.block-container {
-    padding-top: 2rem;
-    padding-bottom: 3rem;
-}
-.glass {
-    background: rgba(255,255,255,0.08);
-    backdrop-filter: blur(16px);
-    border-radius: 18px;
-    padding: 2rem;
-    margin-bottom: 2rem;
-    border: 1px solid rgba(255,255,255,0.15);
-    box-shadow: 0 25px 50px rgba(0,0,0,0.5);
-}
-h1, h2, h3 { color: #f9fafb; }
-p, label, span { color: #d1d5db !important; }
-.stButton > button {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    color: white;
-    border-radius: 12px;
-    padding: 0.7rem 1.6rem;
-    font-weight: 700;
-}
-</style>
-""", unsafe_allow_html=True)
+# ---------------- SESSION STATE ----------------
+if "sent_this_session" not in st.session_state:
+    st.session_state.sent_this_session = set()
 
-# =========================
-# HELPERS
-# =========================
-def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
-    return df
+if "emails_sent" not in st.session_state:
+    st.session_state.emails_sent = 0
+
+
+# ---------------- DATA LOADERS ----------------
+@st.cache_data
+def load_uploaded_csv(file) -> pd.DataFrame:
+    return pd.read_csv(file)
+
 
 @st.cache_data
-def load_master_csv():
-    return normalize_df(pd.read_csv("data/master_companies.csv"))
+def load_master_csv() -> pd.DataFrame:
+    return pd.read_csv("data/master_companies.csv")
 
-@st.cache_data
-def load_uploaded_csv(file):
-    return normalize_df(pd.read_csv(file))
 
-def build_email(sender, recipient, subject, body, row, name_col, company_col):
-    ctx = {}
-    if name_col and name_col in row:
-        ctx["name"] = row[name_col]
-    if company_col and company_col in row:
-        ctx["company"] = row[company_col]
+# ---------------- EMAIL UTIL ----------------
+def safe_format(template: str, ctx: Dict[str, Any]) -> str:
+    try:
+        return template.format(**ctx)
+    except:
+        return template
+
+
+def build_email(
+    sender: str,
+    recipient: str,
+    subject_template: str,
+    body_template: str,
+    row: pd.Series,
+    name_col: Optional[str],
+    company_col: Optional[str],
+) -> EmailMessage:
+
+    context = {}
+    if name_col and name_col in row.index:
+        context["name"] = row[name_col]
+    if company_col and company_col in row.index:
+        context["company"] = row[company_col]
 
     msg = EmailMessage()
     msg["From"] = sender
     msg["To"] = recipient
-    msg["Subject"] = subject.format(**ctx)
-    msg.set_content(body.format(**ctx))
+    msg["Subject"] = safe_format(subject_template, context)
+    msg.set_content(safe_format(body_template, context))
     return msg
 
-def send_batch(account, rows, email_col, subject, body, name_col, company_col, delay, progress):
-    server = smtplib.SMTP(account["smtp"], account["port"])
+
+# ---------------- SMTP SENDER ----------------
+def send_batch_for_account(
+    account_config: Dict[str, str],
+    recipients_rows: List[pd.Series],
+    email_col: str,
+    subject_template: str,
+    body_template: str,
+    name_col: Optional[str],
+    company_col: Optional[str],
+    delay_seconds: float,
+    progress_bar,
+) -> int:
+
+    sent_count = 0
+
+    server = smtplib.SMTP(
+        account_config["smtp_server"],
+        int(account_config["smtp_port"]),
+    )
     server.starttls(context=ssl.create_default_context())
-    server.login(account["email"], account["password"])
+    server.login(account_config["email"], account_config["password"])
 
-    sent = 0
-    total = len(rows)
-
-    for i, row in enumerate(rows):
+    for row in recipients_rows:
         recipient = str(row[email_col]).strip()
-        if not recipient:
+        if not recipient or recipient in st.session_state.sent_this_session:
             continue
 
         msg = build_email(
-            account["email"], recipient,
-            subject, body, row,
-            name_col, company_col
+            account_config["email"],
+            recipient,
+            subject_template,
+            body_template,
+            row,
+            name_col,
+            company_col,
         )
 
-        server.send_message(msg)
-        sent += 1
-        progress.progress((i + 1) / total)
-        time.sleep(delay)
+        try:
+            server.send_message(msg)
+            sent_count += 1
+            st.session_state.sent_this_session.add(recipient)
+            st.session_state.emails_sent += 1
+            progress_bar.progress(
+                st.session_state.emails_sent / st.session_state.total_emails
+            )
+        except Exception as e:
+            st.error(f"Failed to send to {recipient}: {e}")
+
+        time.sleep(delay_seconds)
 
     server.quit()
-    return sent
+    return sent_count
 
-# =========================
-# MAIN APP
-# =========================
+
+# ---------------- MAIN APP ----------------
 def main():
+    st.title("🚀 Startup Outreach Email Automation")
 
-    # HERO
-    st.markdown("""
-    <div class="glass">
-        <h1>🚀 ColdMail Automation Platform</h1>
-        <p>
-            Send <b>personalised cold emails</b> using platform leads
-            or your own CSV — safely and cleanly.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # MODE
-    st.markdown('<div class="glass">', unsafe_allow_html=True)
-    mode = st.radio(
-        "Choose lead source",
-        ["Generate from Platform Data", "Upload CSV Manually"],
-        horizontal=True
+    # ---- VIDEO ----
+    st.subheader("🎥 Quick Tutorial")
+    st.markdown("Watch this short guide on how to use this tool:")
+    st.components.v1.iframe(
+        "https://drive.google.com/file/d/1EG3EIA-JOh0FDqH85ei1RTWsTMwtr3hI/preview",
+        height=480,
     )
-    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.write(
+        "Send personalised outreach emails using **company-based selection** "
+        "or **manual CSV upload**, with **safe multi-account sending**."
+    )
+
+    # ---- INPUT MODE ----
+    st.subheader("1️⃣ Select Lead Input Method")
+    mode = st.radio(
+        "Choose how you want to provide email leads:",
+        ["Generate from Platform Data", "Upload CSV Manually"],
+    )
 
     df = None
     email_col = name_col = company_col = None
 
-    # =========================
-    # PLATFORM DATA MODE
-    # =========================
-    if "Platform" in mode:
-        master = load_master_csv()
+    # ---- PLATFORM DATA MODE ----
+    if mode == "Generate from Platform Data":
+        st.subheader("2️⃣ Select Companies")
 
-        possible_company_cols = [
-            "company", "company_name",
-            "startup", "organisation", "organization"
-        ]
+        master_df = load_master_csv()
 
-        company_col_master = None
-        for c in possible_company_cols:
-            if c in master.columns:
-                company_col_master = c
-                break
+        companies = sorted(master_df["Company"].dropna().unique())
+        selected_companies = st.multiselect(
+            "Select up to 5 companies",
+            companies,
+            max_selections=5,
+        )
 
-        if not company_col_master:
-            st.error("❌ No company column found in master CSV")
-            return
+        limit = st.number_input(
+            "Number of emails to use",
+            min_value=1,
+            max_value=50,
+            value=10,
+        )
 
-        st.markdown('<div class="glass">', unsafe_allow_html=True)
+        if selected_companies:
+            df = (
+                master_df[master_df["Company"].isin(selected_companies)]
+                .head(limit)
+                .copy()
+            )
 
-        companies = sorted(master[company_col_master].dropna().unique())
-        selected = st.multiselect("Select companies (max 5)", companies, max_selections=5)
-        limit = st.number_input("Number of emails", 1, 50, 10)
-
-        if selected:
-            df = master[master[company_col_master].isin(selected)].head(limit).copy()
             email_col = "email"
-            name_col = "name" if "name" in df.columns else None
-            company_col = company_col_master
-            df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+            name_col = "name"
+            company_col = "Company"
 
-        st.markdown('</div>', unsafe_allow_html=True)
+            st.success(f"Selected {len(df)} emails")
+            st.dataframe(df)
 
-    # =========================
-    # MANUAL CSV MODE
-    # =========================
-    if "Upload" in mode:
-        st.markdown('<div class="glass">', unsafe_allow_html=True)
-        uploaded = st.file_uploader("Upload CSV", type=["csv"])
+            st.write("✏️ Edit or remove rows before sending")
+            df = st.data_editor(df, num_rows="dynamic")
+
+            csv = df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ Download Generated CSV",
+                csv,
+                "generated_leads.csv",
+                "text/csv",
+            )
+
+    # ---- MANUAL CSV MODE ----
+    if mode == "Upload CSV Manually":
+        st.subheader("2️⃣ Upload CSV")
+        uploaded = st.file_uploader("Upload CSV file", type=["csv"])
+
         if uploaded:
             df = load_uploaded_csv(uploaded)
-            st.dataframe(df.head(), use_container_width=True)
+            st.write(f"Loaded **{len(df)}** rows")
+            st.dataframe(df.head())
 
-            cols = df.columns.tolist()
+            cols = list(df.columns)
             email_col = st.selectbox("Email column", cols)
-            name_col = st.selectbox("Name column", ["(none)"] + cols)
-            company_col = st.selectbox("Company column", ["(none)"] + cols)
+
+            name_col = st.selectbox("Name column (optional)", ["(none)"] + cols)
+            company_col = st.selectbox("Company column (optional)", ["(none)"] + cols)
 
             if name_col == "(none)":
                 name_col = None
             if company_col == "(none)":
                 company_col = None
 
-        st.markdown('</div>', unsafe_allow_html=True)
+    # ---- TEMPLATE ----
+    st.subheader("3️⃣ Email Template")
 
-    # =========================
-    # TEMPLATE
-    # =========================
-    st.markdown('<div class="glass">', unsafe_allow_html=True)
-    subject = st.text_input("Email subject", "Exploring opportunities at {company}")
-    body = st.text_area(
-        "Email body",
-        height=220,
+    subject_template = st.text_input(
+        "Subject",
+        "Exploring opportunities to contribute at your startup",
+    )
+
+    body_template = st.text_area(
+        "Body",
+        height=260,
         value=(
             "Hi {name},\n\n"
-            "I came across {company} and really liked what you're building.\n\n"
-            "Would love to connect.\n\n"
-            "Best,\nYour Name"
-        )
+            "I came across {company} and really liked what you're building.\n"
+            "I'm exploring opportunities at fast-moving startups.\n\n"
+            "Would love to connect and see if I can add value.\n\n"
+            "Best regards,\nYour Name"
+        ),
     )
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    # =========================
-    # SEND
-    # =========================
-    if df is not None and email_col:
-        st.markdown('<div class="glass">', unsafe_allow_html=True)
+    # ---- ACCOUNTS ----
+    st.subheader("4️⃣ Sender Accounts")
+    accounts = []
 
-        sender_email = st.text_input("Sender email")
-        app_password = st.text_input("Gmail App Password", type="password")
-        delay = st.number_input("Delay between emails (seconds)", 1.0, 10.0, 2.0)
+    for i in range(1, 5):
+        with st.expander(f"Sender {i}"):
+            use = st.checkbox(f"Use sender {i}", value=(i == 1))
+            if not use:
+                continue
 
-        if st.button("🚀 Start Sending"):
-            if not sender_email or not app_password:
-                st.error("Enter sender email and app password")
-            else:
-                account = {
-                    "email": sender_email,
-                    "password": app_password,
-                    "smtp": "smtp.gmail.com",
-                    "port": 587
-                }
-                rows = [r for _, r in df.iterrows()]
-                progress = st.progress(0)
-                sent = send_batch(
-                    account, rows, email_col,
-                    subject, body, name_col, company_col,
-                    delay, progress
+            email = st.text_input(f"Email {i}")
+            password = st.text_input(f"App Password {i}", type="password")
+            smtp = st.text_input(f"SMTP Server {i}", value="smtp.gmail.com")
+            port = st.text_input(f"Port {i}", value="587")
+
+            if email and password:
+                accounts.append(
+                    {
+                        "email": email,
+                        "password": password,
+                        "smtp_server": smtp,
+                        "smtp_port": port,
+                    }
                 )
-                st.success(f"🎉 Sent {sent} emails successfully!")
 
-        st.markdown('</div>', unsafe_allow_html=True)
+    # ---- DELAY ----
+    st.subheader("5️⃣ Delay Between Emails")
+    delay_seconds = st.number_input("Delay (seconds)", 1.0, value=2.0, step=0.5)
 
-# =========================
+    # ---- PREVIEW ----
+    st.subheader("📝 Email Preview")
+    if df is not None and email_col is not None:
+        idx = st.number_input(
+            "Preview email for row",
+            min_value=0,
+            max_value=len(df) - 1,
+            value=0,
+        )
+
+        row = df.iloc[int(idx)]
+        preview_email = build_email(
+            sender=accounts[0]["email"] if accounts else "example@example.com",
+            recipient=str(row[email_col]),
+            subject_template=subject_template,
+            body_template=body_template,
+            row=row,
+            name_col=name_col,
+            company_col=company_col,
+        )
+
+        st.markdown("**Subject**")
+        st.code(preview_email["Subject"])
+
+        st.markdown("**Body**")
+        st.code(preview_email.get_content())
+
+    # ---- SEND ----
+    st.subheader("6️⃣ Send Emails")
+
+    if st.button("🚀 Start Sending"):
+        if df is None or email_col is None:
+            st.error("No email data available.")
+            return
+
+        if not accounts:
+            st.error("Add at least one sender account.")
+            return
+
+        rows = [row for _, row in df.iterrows() if str(row[email_col]).strip()]
+        st.session_state.total_emails = len(rows)
+        st.session_state.emails_sent = 0
+
+        progress_bar = st.progress(0)
+        buckets = {i: [] for i in range(len(accounts))}
+
+        for idx, row in enumerate(rows):
+            buckets[idx % len(accounts)].append(row)
+
+        total_sent = 0
+        status = st.empty()
+
+        for i, batch in buckets.items():
+            status.text(f"📨 Sending using {accounts[i]['email']}...")
+            total_sent += send_batch_for_account(
+                accounts[i],
+                batch,
+                email_col,
+                subject_template,
+                body_template,
+                name_col,
+                company_col,
+                delay_seconds,
+                progress_bar,
+            )
+
+        status.text("🎉 Done!")
+        st.success(f"Sent **{total_sent} / {len(rows)}** emails successfully.")
+
+
 if __name__ == "__main__":
     main()
