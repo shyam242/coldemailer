@@ -212,7 +212,7 @@ if not company_col_master:
     st.error("❌ No company column found in master CSV")
     st.stop()
 
-companies = sorted(master[company_col_master].dropna().unique()
+companies = sorted(master[company_col_master].dropna().unique())
         col1, col2 = st.columns([2,1])
 
         with col1:
