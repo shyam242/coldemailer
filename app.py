@@ -267,31 +267,6 @@ def main():
     delay_seconds = st.number_input("Delay (seconds)", 1.0, value=2.0, step=0.5)
 
     # ---- PREVIEW ----
-    st.subheader("📝 Email Preview")
-    if df is not None and email_col is not None:
-        idx = st.number_input(
-            "Preview email for row",
-            min_value=0,
-            max_value=len(df) - 1,
-            value=0,
-        )
-
-        row = df.iloc[int(idx)]
-        preview_email = build_email(
-            sender=accounts[0]["email"] if accounts else "example@example.com",
-            recipient=str(row[email_col]),
-            subject_template=subject_template,
-            body_template=body_template,
-            row=row,
-            name_col=name_col,
-            company_col=company_col,
-        )
-
-        st.markdown("**Subject**")
-        st.code(preview_email["Subject"])
-
-        st.markdown("**Body**")
-        st.code(preview_email.get_content())
 
     # ---- SEND ----
     st.subheader("6️⃣ Send Emails")
