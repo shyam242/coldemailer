@@ -200,7 +200,19 @@ def main():
         st.markdown('<div class="glass">', unsafe_allow_html=True)
         st.subheader("2️⃣ Select Companies")
 
-        companies = sorted(master["company"].unique())
+        possible_company_cols = ["company", "company_name", "startup", "organisation", "organization"]
+
+company_col_master = None
+for col in possible_company_cols:
+    if col in master.columns:
+        company_col_master = col
+        break
+
+if not company_col_master:
+    st.error("❌ No company column found in master CSV")
+    st.stop()
+
+companies = sorted(master[company_col_master].dropna().unique()
         col1, col2 = st.columns([2,1])
 
         with col1:
