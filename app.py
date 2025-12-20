@@ -74,44 +74,55 @@ def send_batch_for_account(
 
     sent_count = 0
 
-    server = smtplib.SMTP(
-        account_config["smtp_server"],
-        int(account_config["smtp_port"]),
-    )
-    server.starttls(context=ssl.create_default_context())
-    server.login(account_config["email"], account_config["password"])
+    smtp_server = account_config["smtp_server"]
+    smtp_port = int(account_config["smtp_port"])
+    email_address = account_config["email"]
+    password = account_config["password"]
 
-    for row in recipients_rows:
-        recipient = str(row[email_col]).strip()
-        if not recipient or recipient in st.session_state.sent_this_session:
-            continue
+    server = None
 
-        msg = build_email(
-            account_config["email"],
-            recipient,
-            subject_template,
-            body_template,
-            row,
-            name_col,
-            company_col,
-        )
+    try:
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls(context=ssl.create_default_context())
+        server.login(email_address, password)
 
-        try:
-            server.send_message(msg)
-            sent_count += 1
-            st.session_state.sent_this_session.add(recipient)
-            st.session_state.emails_sent += 1
-            progress_bar.progress(
-                st.session_state.emails_sent / st.session_state.total_emails
+        total = len(recipients_rows)
+
+        for idx, row in enumerate(recipients_rows):
+            recipient = str(row[email_col]).strip()
+
+            if not recipient:
+                continue
+
+            msg = build_email(
+                sender=email_address,
+                recipient=recipient,
+                subject_template=subject_template,
+                body_template=body_template,
+                row=row,
+                name_col=name_col,
+                company_col=company_col,
             )
-        except Exception as e:
-            st.error(f"Failed to send to {recipient}: {e}")
 
-        time.sleep(delay_seconds)
+            try:
+                server.send_message(msg)
+                sent_count += 1
+            except Exception as e:
+                st.error(f"Failed to send to {recipient}: {e}")
 
-    server.quit()
+            progress_bar.progress((idx + 1) / total)
+
+            if delay_seconds > 0:
+                time.sleep(delay_seconds)
+
+    except Exception as e:
+        st.error(f"SMTP error: {e}")
+
+    finally:
+        if server:
+            server.quit()
+
     return sent_count
-
 
 # ---------------- MAIN APP ----------------
 def main():
@@ -268,7 +279,7 @@ def main():
         row = df.iloc[int(idx)]
         preview_email = build_email(
             sender=accounts[0]["email"] if accounts else "example@example.com",
-            recipient=str(row[email]),
+            recipient=str(row[email_col]),
             subject_template=subject_template,
             body_template=body_template,
             row=row,
