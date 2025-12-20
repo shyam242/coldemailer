@@ -27,7 +27,7 @@ def load_master_csv() -> pd.DataFrame:
     return pd.read_csv("data/master_companies.csv")
 
 
-# ---------------- EMAIL BUILDER ----------------
+# ---------------- EMAIL UTIL ----------------
 def safe_format(template: str, ctx: Dict[str, Any]) -> str:
     try:
         return template.format(**ctx)
@@ -117,19 +117,20 @@ def send_batch_for_account(
 def main():
     st.title("🚀 Startup Outreach Email Automation")
 
+    # ---- VIDEO ----
     st.subheader("🎥 Quick Tutorial")
-st.markdown("Watch this short guide on how to use this tool:")
+    st.markdown("Watch this short guide on how to use this tool:")
+    st.components.v1.iframe(
+        "https://drive.google.com/file/d/1EG3EIA-JOh0FDqH85ei1RTWsTMwtr3hI/preview",
+        height=480,
+    )
 
-st.components.v1.iframe(
-    "https://drive.google.com/file/d/1EG3EIA-JOh0FDqH85ei1RTWsTMwtr3hI/preview",
-    height=480,
-)
     st.write(
         "Send personalised outreach emails using **company-based selection** "
         "or **manual CSV upload**, with **safe multi-account sending**."
     )
 
-    # INPUT MODE
+    # ---- INPUT MODE ----
     st.subheader("1️⃣ Select Lead Input Method")
     mode = st.radio(
         "Choose how you want to provide email leads:",
@@ -139,7 +140,7 @@ st.components.v1.iframe(
     df = None
     email_col = name_col = company_col = None
 
-    # ---------------- PLATFORM DATA MODE ----------------
+    # ---- PLATFORM DATA MODE ----
     if mode == "Generate from Platform Data":
         st.subheader("2️⃣ Select Companies")
 
@@ -168,7 +169,7 @@ st.components.v1.iframe(
 
             email_col = "email"
             name_col = "name"
-            company_col = "company"
+            company_col = "Company"
 
             st.success(f"Selected {len(df)} emails")
             st.dataframe(df)
@@ -184,7 +185,7 @@ st.components.v1.iframe(
                 "text/csv",
             )
 
-    # ---------------- MANUAL CSV MODE ----------------
+    # ---- MANUAL CSV MODE ----
     if mode == "Upload CSV Manually":
         st.subheader("2️⃣ Upload CSV")
         uploaded = st.file_uploader("Upload CSV file", type=["csv"])
@@ -196,6 +197,7 @@ st.components.v1.iframe(
 
             cols = list(df.columns)
             email_col = st.selectbox("Email column", cols)
+
             name_col = st.selectbox("Name column (optional)", ["(none)"] + cols)
             company_col = st.selectbox("Company column (optional)", ["(none)"] + cols)
 
@@ -204,7 +206,7 @@ st.components.v1.iframe(
             if company_col == "(none)":
                 company_col = None
 
-    # ---------------- TEMPLATE ----------------
+    # ---- TEMPLATE ----
     st.subheader("3️⃣ Email Template")
 
     subject_template = st.text_input(
@@ -224,7 +226,7 @@ st.components.v1.iframe(
         ),
     )
 
-    # ---------------- SENDER ACCOUNTS ----------------
+    # ---- ACCOUNTS ----
     st.subheader("4️⃣ Sender Accounts")
     accounts = []
 
@@ -249,14 +251,13 @@ st.components.v1.iframe(
                     }
                 )
 
-    # ---------------- DELAY ----------------
+    # ---- DELAY ----
     st.subheader("5️⃣ Delay Between Emails")
     delay_seconds = st.number_input("Delay (seconds)", 1.0, value=2.0, step=0.5)
-# ---------------- PREVIEW ----------------
-st.subheader("📝 Email Preview")
 
-if df is not None and email_col is not None:
-    try:
+    # ---- PREVIEW ----
+    st.subheader("📝 Email Preview")
+    if df is not None and email_col is not None:
         idx = st.number_input(
             "Preview email for row",
             min_value=0,
@@ -265,7 +266,6 @@ if df is not None and email_col is not None:
         )
 
         row = df.iloc[int(idx)]
-
         preview_email = build_email(
             sender=accounts[0]["email"] if accounts else "example@example.com",
             recipient=str(row[email_col]),
@@ -282,10 +282,7 @@ if df is not None and email_col is not None:
         st.markdown("**Body**")
         st.code(preview_email.get_content())
 
-    except Exception as e:
-        st.warning(f"Preview unavailable: {e}")
-
-    # ---------------- SEND ----------------
+    # ---- SEND ----
     st.subheader("6️⃣ Send Emails")
 
     if st.button("🚀 Start Sending"):
