@@ -138,7 +138,7 @@ def main():
 
         master_df = load_master_csv()
 
-        companies = sorted(master_df["company"].dropna().unique())
+        companies = sorted(master_df["Company"].dropna().unique())
         selected_companies = st.multiselect(
             "Select up to 5 companies",
             companies,
