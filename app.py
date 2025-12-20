@@ -154,7 +154,7 @@ def main():
 
         if selected_companies:
             df = (
-                master_df[master_df["company"].isin(selected_companies)]
+                master_df[master_df["Company"].isin(selected_companies)]
                 .head(limit)
                 .copy()
             )
