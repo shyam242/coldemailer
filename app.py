@@ -268,7 +268,7 @@ def main():
         row = df.iloc[int(idx)]
         preview_email = build_email(
             sender=accounts[0]["email"] if accounts else "example@example.com",
-            recipient=str(row[email_col]),
+            recipient=str(row[email]),
             subject_template=subject_template,
             body_template=body_template,
             row=row,
