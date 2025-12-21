@@ -157,7 +157,7 @@ def main():
 
         master_df = load_master_csv()
 
-        companies = sorted(master_df["Company"].dropna().unique())
+        companies = sorted(master_df["company"].dropna().unique())
         selected_companies = st.multiselect(
             "Select up to 5 companies",
             companies,
@@ -173,7 +173,7 @@ def main():
 
         if selected_companies:
             df = (
-                master_df[master_df["Company"].isin(selected_companies)]
+                master_df[master_df["company"].isin(selected_companies)]
                 .head(limit)
                 .copy()
             )
