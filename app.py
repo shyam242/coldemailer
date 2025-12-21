@@ -83,6 +83,10 @@ def send_batch(account, rows, subject_t, body_t, delay, progress):
 # ---------------- MAIN APP ----------------
 def main():
     st.title("🚀 Startup Outreach Email Automation")
+    # ---- VIDEO ---- 
+    st.subheader("🎥 Quick Tutorial") 
+    st.markdown("Watch this short guide on how to use this tool:")
+    st.components.v1.iframe( "https://drive.google.com/file/d/1EG3EIA-JOh0FDqH85ei1RTWsTMwtr3hI/preview", height=480, )
 
     # ---- LEAD SOURCE ----
     st.subheader("1️⃣ Lead Source")
