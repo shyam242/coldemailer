@@ -31,7 +31,7 @@ def load_master_csv() -> pd.DataFrame:
 def safe_format(template: str, ctx: Dict[str, Any]) -> str:
     try:
         return template.format(**ctx)
-    except:
+    except Exception:
         return template
 
 
@@ -46,10 +46,18 @@ def build_email(
 ) -> EmailMessage:
 
     context = {}
-    if name_col and name_col in row.index:
-        context["name"] = row[name_col]
-    if company_col and company_col in row.index:
-        context["company"] = row[company_col]
+
+    # ---- NAME ----
+    if name_col and name_col in row.index and str(row[name_col]).strip():
+        context["name"] = str(row[name_col]).strip()
+    else:
+        context["name"] = "there"
+
+    # ---- COMPANY ----
+    if company_col and company_col in row.index and str(row[company_col]).strip():
+        context["company"] = str(row[company_col]).strip()
+    else:
+        context["company"] = "your company"
 
     msg = EmailMessage()
     msg["From"] = sender
@@ -90,7 +98,6 @@ def send_batch_for_account(
 
         for idx, row in enumerate(recipients_rows):
             recipient = str(row[email_col]).strip()
-
             if not recipient:
                 continue
 
@@ -124,21 +131,21 @@ def send_batch_for_account(
 
     return sent_count
 
+
 # ---------------- MAIN APP ----------------
 def main():
     st.title("🚀 Startup Outreach Email Automation")
 
     # ---- VIDEO ----
     st.subheader("🎥 Quick Tutorial")
-    st.markdown("Watch this short guide on how to use this tool:")
     st.components.v1.iframe(
         "https://drive.google.com/file/d/1EG3EIA-JOh0FDqH85ei1RTWsTMwtr3hI/preview",
         height=480,
     )
 
     st.write(
-        "Send personalised outreach emails using **company-based selection** "
-        "or **manual CSV upload**, with **safe multi-account sending**."
+        "Send personalised outreach emails using company-based selection "
+        "or manual CSV upload with safe multi-account sending."
     )
 
     # ---- INPUT MODE ----
@@ -178,23 +185,15 @@ def main():
                 .copy()
             )
 
+            # EXACT CSV COLUMN NAMES
             email_col = "email"
             name_col = "name"
-            company_col = "Company"
+            company_col = "company"
 
             st.success(f"Selected {len(df)} emails")
             st.dataframe(df)
 
-            st.write("✏️ Edit or remove rows before sending")
             df = st.data_editor(df, num_rows="dynamic")
-
-            csv = df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "⬇️ Download Generated CSV",
-                csv,
-                "generated_leads.csv",
-                "text/csv",
-            )
 
     # ---- MANUAL CSV MODE ----
     if mode == "Upload CSV Manually":
@@ -206,23 +205,17 @@ def main():
             st.write(f"Loaded **{len(df)}** rows")
             st.dataframe(df.head())
 
-            cols = list(df.columns)
-            email_col = st.selectbox("Email column", cols)
-
-            name_col = st.selectbox("Name column (optional)", ["(none)"] + cols)
-            company_col = st.selectbox("Company column (optional)", ["(none)"] + cols)
-
-            if name_col == "(none)":
-                name_col = None
-            if company_col == "(none)":
-                company_col = None
+            # FIXED column mapping
+            email_col = "email"
+            name_col = "name"
+            company_col = "company"
 
     # ---- TEMPLATE ----
     st.subheader("3️⃣ Email Template")
 
     subject_template = st.text_input(
         "Subject",
-        "Exploring opportunities to contribute at your startup",
+        "Exploring opportunities to contribute at {company}",
     )
 
     body_template = st.text_area(
@@ -230,10 +223,16 @@ def main():
         height=260,
         value=(
             "Hi {name},\n\n"
-            "I came across {company} and really liked what you're building.\n"
-            "I'm exploring opportunities at fast-moving startups.\n\n"
-            "Would love to connect and see if I can add value.\n\n"
-            "Best regards,\nYour Name"
+            "I came across {company} and really liked how you’re building technology "
+            "to streamline restaurant operations at scale.\n\n"
+            "I’m a B.Tech student at BIT Mesra with strong exposure to supply chain "
+            "management, operations, and data-driven analysis, and I’m exploring "
+            "internship opportunities at a fast-growing B2B startup.\n\n"
+            "I’d love to connect and learn if there’s an opportunity to contribute "
+            "to your team.\n\n"
+            "Best regards,\n"
+            "Shyam Kumar\n"
+            "BIT Mesra"
         ),
     )
 
@@ -265,8 +264,23 @@ def main():
     # ---- DELAY ----
     st.subheader("5️⃣ Delay Between Emails")
     delay_seconds = st.number_input("Delay (seconds)", 1.0, value=2.0, step=0.5)
+    
+      # ---- PREVIEW ----
+    st.subheader("3️⃣ Preview Email")
 
-    # ---- PREVIEW ----
+    if df is not None and len(df) > 0:
+        preview_row = df.iloc[0]
+        ctx = build_context(preview_row)
+
+        with st.expander("👀 Click to preview first email"):
+            st.markdown("**Subject**")
+            st.code(safe_format(subject_template, ctx))
+
+            st.markdown("**Body**")
+            st.code(safe_format(body_template, ctx))
+    else:
+        st.info("Upload/select data to enable preview.")
+
 
     # ---- SEND ----
     st.subheader("6️⃣ Send Emails")
@@ -281,8 +295,6 @@ def main():
             return
 
         rows = [row for _, row in df.iterrows() if str(row[email_col]).strip()]
-        st.session_state.total_emails = len(rows)
-        st.session_state.emails_sent = 0
 
         progress_bar = st.progress(0)
         buckets = {i: [] for i in range(len(accounts))}
