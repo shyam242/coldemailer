@@ -102,7 +102,7 @@ def main():
         companies = sorted(master_df["company"].dropna().unique())
 
         selected = st.multiselect("Select up to 5 companies", companies, max_selections=5)
-        limit = st.number_input("Number of emails")
+        limit = st.number_input("Number of emails",1,200,10)
 
         if selected:
             df = master_df[master_df["company"].isin(selected)].head(limit).copy()
