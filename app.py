@@ -128,16 +128,14 @@ def main():
         height=280,
         value=(
             "Hi {name},\n\n"
-            "I came across {company} and really liked how you’re building technology "
-            "to streamline restaurant operations at scale.\n\n"
-            "I’m a B.Tech student at BIT Mesra with strong exposure to supply chain "
+            "hope you’re doing well. I came across {company} and was impressed by the work you’re doing in _industry_"
+            "I’m a student of _college_ with strong exposure to supply chain "
             "management, operations, and data-driven analysis, and I’m exploring "
             "internship opportunities at a fast-growing B2B startup.\n\n"
             "I’d love to connect and learn if there’s an opportunity to contribute "
             "to your team.\n\n"
             "Best regards,\n"
-            "Shyam Kumar\n"
-            "BIT Mesra"
+            "Your name\n"
         ),
     )
 
