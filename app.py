@@ -128,7 +128,7 @@ def main():
         height=280,
         value=(
             "Hi {name},\n\n"
-            "hope you’re doing well. I came across {company} and was impressed by the work you’re doing in _industry_"
+            "hope you’re doing well. I came across {company} and was impressed by the work you’re doing in (industry).\n"
             "I’m a student of _college_ with strong exposure to supply chain "
             "management, operations, and data-driven analysis, and I’m exploring "
             "internship opportunities at a fast-growing B2B startup.\n\n"
