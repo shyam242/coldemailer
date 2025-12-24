@@ -28,7 +28,6 @@ def safe_format(template: str, ctx: Dict[str, str]) -> str:
 def build_context(row: pd.Series) -> Dict[str, str]:
     name = str(row.get("name", "")).strip()
     company = str(row.get("company", "")).strip()
-
     return {
         "name": name if name else "there",
         "company": company if company else "your company",
@@ -43,7 +42,7 @@ def build_email(sender, recipient, subject_t, body_t, ctx):
     return msg
 
 # ---------------- SMTP SENDER ----------------
-def send_batch(account, rows, subject_t, body_t, delay, progress, start_idx, total):
+def send_batch(account, rows, subject_t, body_t, delay, progress, sent_so_far, total):
     sent = 0
     server = smtplib.SMTP(account["smtp_server"], int(account["smtp_port"]))
     server.starttls(context=ssl.create_default_context())
@@ -69,7 +68,7 @@ def send_batch(account, rows, subject_t, body_t, delay, progress, start_idx, tot
         except Exception as e:
             st.error(f"Failed to send to {recipient}: {e}")
 
-        progress.progress((start_idx + i + 1) / total)
+        progress.progress((sent_so_far + i + 1) / total)
         time.sleep(delay)
 
     server.quit()
@@ -83,7 +82,7 @@ def main():
     st.subheader("🎥 Quick Tutorial")
     st.components.v1.iframe(
         "https://drive.google.com/file/d/1EG3EIA-JOh0FDqH85ei1RTWsTMwtr3hI/preview",
-        height=480,
+        height=420,
     )
 
     # ---- LEAD SOURCE ----
@@ -98,7 +97,7 @@ def main():
     if mode == "Generate from Platform Data":
         master_df = load_master_csv()
         companies = sorted(master_df["company"].dropna().unique())
-        selected = st.multiselect("Select up to 5 companies", companies, max_selections=5)
+        selected = st.multiselect("Select companies", companies, max_selections=5)
 
         if selected:
             df = master_df[master_df["company"].isin(selected)].copy()
@@ -120,39 +119,37 @@ def main():
 
     body_template = st.text_area(
         "Body",
-        height=280,
+        height=260,
         value=(
             "Hi {name},\n\n"
             "I came across {company} and was impressed by the work you're doing.\n\n"
             "I'd love to connect and learn if there's an opportunity to contribute.\n\n"
-            "Best regards,\nYour Name\n"
+            "Best regards,\nYour Name"
         ),
     )
 
     # ---- PREVIEW ----
     st.subheader("3️⃣ Preview Email")
     if df is not None and len(df) > 0:
-        row = df.iloc[0]
-        ctx = build_context(row)
+        ctx = build_context(df.iloc[0])
         st.code(safe_format(subject_template, ctx))
         st.code(safe_format(body_template, ctx))
     else:
         st.info("Upload or select leads to enable preview.")
 
-    # ---- SENDER ACCOUNTS ----
+    # ---- SENDERS ----
     st.subheader("4️⃣ Sender Accounts")
 
     st.warning(
-        "⚠️ **Email Sending Limits**\n\n"
-        "- Each sender can send **50 emails maximum**\n"
-        "- 1 sender = 50 emails\n"
-        "- 2 senders = 100 emails\n"
-        "- 3 senders = 150 emails\n\n"
-        "Select senders accordingly."
+        "⚠️ **Sending Rules**\n\n"
+        "- Each sender can send **50 emails max**\n"
+        "- 1 sender → 50 emails\n"
+        "- 2 senders → 100 emails\n"
+        "- 3 senders → 150 emails\n\n"
+        "Emails are sent **sender-wise (not mixed)**."
     )
 
     accounts = []
-
     for i in range(1, 4):
         with st.expander(f"Sender {i}"):
             use = st.checkbox(f"Use sender {i}", value=(i == 1))
@@ -178,28 +175,34 @@ def main():
 
     if st.button("🚀 Start Sending"):
         if df is None or not accounts:
-            st.error("Missing lead data or sender account.")
+            st.error("Missing lead data or sender accounts.")
             return
 
+        rows = [r for _, r in df.iterrows() if str(r["email"]).strip()]
         max_allowed = len(accounts) * 50
-        rows = [row for _, row in df.iterrows() if str(row["email"]).strip()]
         rows = rows[:max_allowed]
 
-        st.info(f"📤 Sending **{len(rows)} emails** using {len(accounts)} sender(s)")
+        st.info(
+            f"📤 Sending {len(rows)} emails using "
+            f"{len(accounts)} sender(s) (50 each)"
+        )
 
         progress = st.progress(0)
-
-        buckets = {i: [] for i in range(len(accounts))}
-        for idx, row in enumerate(rows):
-            buckets[idx % len(accounts)].append(row)
-
-        total_sent = 0
-        sent_so_far = 0
         total = len(rows)
+        sent_so_far = 0
+        total_sent = 0
 
-        for i, batch in buckets.items():
+        # 🔥 STRICT BATCHING (50 PER SENDER)
+        for i, account in enumerate(accounts):
+            start = i * 50
+            end = start + 50
+            batch = rows[start:end]
+
+            if not batch:
+                continue
+
             total_sent += send_batch(
-                accounts[i],
+                account,
                 batch,
                 subject_template,
                 body_template,
@@ -208,6 +211,7 @@ def main():
                 sent_so_far,
                 total,
             )
+
             sent_so_far += len(batch)
 
         st.success(f"🎉 Sent {total_sent} emails successfully!")
