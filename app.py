@@ -43,50 +43,48 @@ def build_email(sender, recipient, subject_t, body_t, ctx):
     return msg
 
 # ---------------- SMTP SENDER ----------------
-def send_batch(account, rows, subject_t, body_t, delay, progress):
+def send_batch(account, rows, subject_t, body_t, delay, progress, start_idx, total):
     sent = 0
-    try:
-        server = smtplib.SMTP(account["smtp_server"], int(account["smtp_port"]))
-        server.starttls(context=ssl.create_default_context())
-        server.login(account["email"], account["password"])
+    server = smtplib.SMTP(account["smtp_server"], int(account["smtp_port"]))
+    server.starttls(context=ssl.create_default_context())
+    server.login(account["email"], account["password"])
 
-        total = len(rows)
-        for i, row in enumerate(rows):
-            recipient = str(row["email"]).strip()
-            if not recipient:
-                continue
+    for i, row in enumerate(rows):
+        recipient = str(row["email"]).strip()
+        if not recipient:
+            continue
 
-            ctx = build_context(row)
-            msg = build_email(
-                account["email"],
-                recipient,
-                subject_t,
-                body_t,
-                ctx,
-            )
+        ctx = build_context(row)
+        msg = build_email(
+            account["email"],
+            recipient,
+            subject_t,
+            body_t,
+            ctx,
+        )
 
-            try:
-                server.send_message(msg)
-                sent += 1
-            except Exception as e:
-                st.error(f"Failed to send to {recipient}: {e}")
+        try:
+            server.send_message(msg)
+            sent += 1
+        except Exception as e:
+            st.error(f"Failed to send to {recipient}: {e}")
 
-            progress.progress((i + 1) / total)
-            time.sleep(delay)
+        progress.progress((start_idx + i + 1) / total)
+        time.sleep(delay)
 
-        server.quit()
-    except Exception as e:
-        st.error(f"SMTP error: {e}")
-
+    server.quit()
     return sent
 
 # ---------------- MAIN APP ----------------
 def main():
     st.title("🚀 Startup Outreach Email Automation")
-    # ---- VIDEO ---- 
-    st.subheader("🎥 Quick Tutorial") 
-    st.markdown("Watch this short guide on how to use this tool:")
-    st.components.v1.iframe( "https://drive.google.com/file/d/1EG3EIA-JOh0FDqH85ei1RTWsTMwtr3hI/preview", height=480, )
+
+    # ---- VIDEO ----
+    st.subheader("🎥 Quick Tutorial")
+    st.components.v1.iframe(
+        "https://drive.google.com/file/d/1EG3EIA-JOh0FDqH85ei1RTWsTMwtr3hI/preview",
+        height=480,
+    )
 
     # ---- LEAD SOURCE ----
     st.subheader("1️⃣ Lead Source")
@@ -100,7 +98,6 @@ def main():
     if mode == "Generate from Platform Data":
         master_df = load_master_csv()
         companies = sorted(master_df["company"].dropna().unique())
-
         selected = st.multiselect("Select up to 5 companies", companies, max_selections=5)
 
         if selected:
@@ -116,7 +113,6 @@ def main():
 
     # ---- TEMPLATE ----
     st.subheader("2️⃣ Email Template")
-
     subject_template = st.text_input(
         "Subject",
         "Exploring opportunities to contribute at {company}",
@@ -127,34 +123,34 @@ def main():
         height=280,
         value=(
             "Hi {name},\n\n"
-            "hope you’re doing well. I came across {company} and was impressed by the work you’re doing in (industry).\n"
-            "I’m a student of (college) with strong exposure to supply chain "
-            "management, operations, and data-driven analysis, and I’m exploring "
-            "internship opportunities at a fast-growing B2B startup.\n\n"
-            "I’d love to connect and learn if there’s an opportunity to contribute "
-            "to your team.\n\n"
-            "Best regards,\n"
-            "Your name\n"
+            "I came across {company} and was impressed by the work you're doing.\n\n"
+            "I'd love to connect and learn if there's an opportunity to contribute.\n\n"
+            "Best regards,\nYour Name\n"
         ),
     )
 
     # ---- PREVIEW ----
     st.subheader("3️⃣ Preview Email")
-
     if df is not None and len(df) > 0:
-        preview_row = df.iloc[0]
-        ctx = build_context(preview_row)
-
-        with st.expander("👀 Preview first email"):
-            st.markdown("**Subject**")
-            st.code(safe_format(subject_template, ctx))
-            st.markdown("**Body**")
-            st.code(safe_format(body_template, ctx))
+        row = df.iloc[0]
+        ctx = build_context(row)
+        st.code(safe_format(subject_template, ctx))
+        st.code(safe_format(body_template, ctx))
     else:
         st.info("Upload or select leads to enable preview.")
 
     # ---- SENDER ACCOUNTS ----
     st.subheader("4️⃣ Sender Accounts")
+
+    st.warning(
+        "⚠️ **Email Sending Limits**\n\n"
+        "- Each sender can send **50 emails maximum**\n"
+        "- 1 sender = 50 emails\n"
+        "- 2 senders = 100 emails\n"
+        "- 3 senders = 150 emails\n\n"
+        "Select senders accordingly."
+    )
+
     accounts = []
 
     for i in range(1, 4):
@@ -185,7 +181,12 @@ def main():
             st.error("Missing lead data or sender account.")
             return
 
+        max_allowed = len(accounts) * 50
         rows = [row for _, row in df.iterrows() if str(row["email"]).strip()]
+        rows = rows[:max_allowed]
+
+        st.info(f"📤 Sending **{len(rows)} emails** using {len(accounts)} sender(s)")
+
         progress = st.progress(0)
 
         buckets = {i: [] for i in range(len(accounts))}
@@ -193,6 +194,9 @@ def main():
             buckets[idx % len(accounts)].append(row)
 
         total_sent = 0
+        sent_so_far = 0
+        total = len(rows)
+
         for i, batch in buckets.items():
             total_sent += send_batch(
                 accounts[i],
@@ -201,7 +205,10 @@ def main():
                 body_template,
                 delay,
                 progress,
+                sent_so_far,
+                total,
             )
+            sent_so_far += len(batch)
 
         st.success(f"🎉 Sent {total_sent} emails successfully!")
 
