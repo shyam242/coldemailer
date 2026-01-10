@@ -4,7 +4,7 @@ import smtplib
 import ssl
 import time
 from email.message import EmailMessage
-from typing import Dict, List
+from typing import Dict
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Startup Outreach Mailer", layout="wide")
@@ -33,9 +33,9 @@ def build_context(row: pd.Series) -> Dict[str, str]:
         "company": company if company else "your company",
     }
 
-def build_email(sender, recipient, subject_t, body_t, ctx):
+def build_email(sender_name, sender_email, recipient, subject_t, body_t, ctx):
     msg = EmailMessage()
-    msg["From"] = sender
+    msg["From"] = f"{sender_name} <{sender_email}>"
     msg["To"] = recipient
     msg["Subject"] = safe_format(subject_t, ctx)
     msg.set_content(safe_format(body_t, ctx))
@@ -44,6 +44,7 @@ def build_email(sender, recipient, subject_t, body_t, ctx):
 # ---------------- SMTP SENDER ----------------
 def send_batch(account, rows, subject_t, body_t, delay, progress, sent_so_far, total):
     sent = 0
+
     server = smtplib.SMTP(account["smtp_server"], int(account["smtp_port"]))
     server.starttls(context=ssl.create_default_context())
     server.login(account["email"], account["password"])
@@ -54,7 +55,9 @@ def send_batch(account, rows, subject_t, body_t, delay, progress, sent_so_far, t
             continue
 
         ctx = build_context(row)
+
         msg = build_email(
+            account["name"],
             account["email"],
             recipient,
             subject_t,
@@ -112,6 +115,7 @@ def main():
 
     # ---- TEMPLATE ----
     st.subheader("2️⃣ Email Template")
+
     subject_template = st.text_input(
         "Subject",
         "Exploring opportunities to contribute at {company}",
@@ -124,7 +128,7 @@ def main():
             "Hi {name},\n\n"
             "I came across {company} and was impressed by the work you're doing.\n\n"
             "I'd love to connect and learn if there's an opportunity to contribute.\n\n"
-            "Best regards,\nYour Name"
+            "Best regards,\n"
         ),
     )
 
@@ -150,20 +154,27 @@ def main():
     )
 
     accounts = []
+
     for i in range(1, 4):
         with st.expander(f"Sender {i}"):
             use = st.checkbox(f"Use sender {i}", value=(i == 1))
             if not use:
                 continue
 
+            sender_name = st.text_input(
+                f"Sender Name {i}",
+                placeholder="e.g. Rahul Verma"
+            )
+
             email = st.text_input(f"Email {i}")
             password = st.text_input(f"App Password {i}", type="password")
             smtp = st.text_input(f"SMTP Server {i}", value="smtp.gmail.com")
             port = st.text_input(f"Port {i}", value="587")
 
-            if email and password:
+            if sender_name and email and password:
                 accounts.append({
-                    "email": email,
+                    "name": sender_name.strip(),
+                    "email": email.strip(),
                     "password": password,
                     "smtp_server": smtp,
                     "smtp_port": port,
@@ -192,7 +203,6 @@ def main():
         sent_so_far = 0
         total_sent = 0
 
-        # 🔥 STRICT BATCHING (50 PER SENDER)
         for i, account in enumerate(accounts):
             start = i * 50
             end = start + 50
