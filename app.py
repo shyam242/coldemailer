@@ -111,7 +111,7 @@ def main():
         uploaded = st.file_uploader("Upload CSV (name, email, company)", type=["csv"])
         if uploaded:
             df = load_uploaded_csv(uploaded)
-            st.dataframe(df.head())
+            st.dataframe()
 
     # ---- TEMPLATE ----
     st.subheader("2️⃣ Email Template")
