@@ -10,7 +10,6 @@ from typing import Dict
 st.set_page_config(page_title="Startup Outreach Mailer", layout="wide")
 
 # ---------------- DATA LOADERS ----------------
-@st.cache_data
 def load_uploaded_csv(file):
     return pd.read_csv(file)
 
@@ -26,10 +25,12 @@ def safe_format(template: str, ctx: Dict[str, str]) -> str:
         return template
 
 def build_context(row: pd.Series) -> Dict[str, str]:
-    name = str(row.get("name", "")).strip()
+    full_name = str(row.get("name", "")).strip()
+    first_name = full_name.split()[0] if full_name else "there"
     company = str(row.get("company", "")).strip()
+
     return {
-        "name": name if name else "there",
+        "name": first_name,
         "company": company if company else "your company",
     }
 
@@ -50,12 +51,11 @@ def send_batch(account, rows, subject_t, body_t, delay, progress, sent_so_far, t
     server.login(account["email"], account["password"])
 
     for i, row in enumerate(rows):
-        recipient = str(row["email"]).strip()
+        recipient = str(row.get("email", "")).strip()
         if not recipient:
             continue
 
         ctx = build_context(row)
-
         msg = build_email(
             account["name"],
             account["email"],
@@ -81,13 +81,6 @@ def send_batch(account, rows, subject_t, body_t, delay, progress, sent_so_far, t
 def main():
     st.title("🚀 Startup Outreach Email Automation")
 
-    # ---- VIDEO ----
-    st.subheader("🎥 Quick Tutorial")
-    st.components.v1.iframe(
-        "https://drive.google.com/file/d/1EG3EIA-JOh0FDqH85ei1RTWsTMwtr3hI/preview",
-        height=420,
-    )
-
     # ---- LEAD SOURCE ----
     st.subheader("1️⃣ Lead Source")
     mode = st.radio(
@@ -97,6 +90,7 @@ def main():
 
     df = None
 
+    # ---- PLATFORM DATA ----
     if mode == "Generate from Platform Data":
         master_df = load_master_csv()
         companies = sorted(master_df["company"].dropna().unique())
@@ -104,14 +98,23 @@ def main():
 
         if selected:
             df = master_df[master_df["company"].isin(selected)].copy()
-            st.dataframe(df)
+            st.markdown("### ✏️ Edit Leads")
             df = st.data_editor(df, num_rows="dynamic")
 
+    # ---- CSV UPLOAD ----
     if mode == "Upload CSV Manually":
         uploaded = st.file_uploader("Upload CSV (name, email, company)", type=["csv"])
         if uploaded:
             df = load_uploaded_csv(uploaded)
-            st.dataframe(df)
+
+            st.markdown("### ✏️ Edit Uploaded CSV")
+            st.info("You can edit names, emails, companies, add or delete rows below.")
+
+            df = st.data_editor(
+                df,
+                num_rows="dynamic",
+                use_container_width=True
+            )
 
     # ---- TEMPLATE ----
     st.subheader("2️⃣ Email Template")
@@ -145,12 +148,12 @@ def main():
     st.subheader("4️⃣ Sender Accounts")
 
     st.warning(
-        "⚠️ **Sending Rules**\n\n"
+        "⚠️ Sending Rules\n\n"
         "- Each sender can send **50 emails max**\n"
         "- 1 sender → 50 emails\n"
         "- 2 senders → 100 emails\n"
         "- 3 senders → 150 emails\n\n"
-        "Emails are sent **sender-wise (not mixed)**."
+        "Emails are sent sender-wise (not mixed)."
     )
 
     accounts = []
@@ -161,11 +164,7 @@ def main():
             if not use:
                 continue
 
-            sender_name = st.text_input(
-                f"Sender Name {i}",
-                placeholder="e.g. Rahul Verma"
-            )
-
+            sender_name = st.text_input(f"Sender Name {i}")
             email = st.text_input(f"Email {i}")
             password = st.text_input(f"App Password {i}", type="password")
             smtp = st.text_input(f"SMTP Server {i}", value="smtp.gmail.com")
@@ -189,13 +188,13 @@ def main():
             st.error("Missing lead data or sender accounts.")
             return
 
-        rows = [r for _, r in df.iterrows() if str(r["email"]).strip()]
+        rows = [r for _, r in df.iterrows() if str(r.get("email", "")).strip()]
         max_allowed = len(accounts) * 50
         rows = rows[:max_allowed]
 
         st.info(
             f"📤 Sending {len(rows)} emails using "
-            f"{len(accounts)} sender(s) (50 each)"
+            f"{len(accounts)} sender(s)"
         )
 
         progress = st.progress(0)
